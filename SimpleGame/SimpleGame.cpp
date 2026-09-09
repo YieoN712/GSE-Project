@@ -13,76 +13,82 @@ but WITHOUT ANY WARRANTY.
 #include "Dependencies\glew.h"
 #include "Dependencies\freeglut.h"
 
-#include "Renderer.h"
+#include "Tutorial.h"
+#include <memory>
+#include <algorithm>
 
-Renderer *g_Renderer = NULL;
+namespace {
+Tutorial game;
+std::unique_ptr<TutorialView> view;
+int windowWidth = 1280, windowHeight = 800;
+int lastTime = 0;
+bool visible = true;
+}
 
 void RenderScene(void)
 {
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	glClearColor(0.0f, 0.3f, 0.3f, 1.0f);
-
-	// Renderer Test
-	g_Renderer->DrawSolidRect(0, 0, 0, 4, 1, 0, 1, 1);
-
+	if (view) view->Draw(game, windowWidth, windowHeight);
 	glutSwapBuffers();
 }
 
-void Idle(void)
+void Tick(int)
 {
-	RenderScene();
+	int now = glutGet(GLUT_ELAPSED_TIME);
+	float dt = (std::max)((now - lastTime) / 1000.f, 0.f);
+	lastTime = now;
+	// Losing focus must not leave a held WASD key stuck on return.
+	bool focused = GetForegroundWindow() == WindowFromDC(wglGetCurrentDC());
+	if (visible && focused) game.Update(dt);
+	else game.ClearKeys();
+	glutPostRedisplay();
+	glutTimerFunc(16, Tick, 0);
 }
 
-void MouseInput(int button, int state, int x, int y)
+void Resize(int width, int height)
 {
-	RenderScene();
+	windowWidth = (std::max)(width, 1); windowHeight = (std::max)(height, 1);
 }
 
 void KeyInput(unsigned char key, int x, int y)
 {
-	RenderScene();
+	game.KeyDown(key);
 }
-
-void SpecialKeyInput(int key, int x, int y)
-{
-	RenderScene();
-}
+void KeyReleased(unsigned char key, int, int) { game.KeyUp(key); }
+void Visibility(int state) { visible = state == GLUT_VISIBLE; game.ClearKeys(); }
+void Close() { view.reset(); }
 
 int main(int argc, char **argv)
 {
 	// Initialize GL things
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DEPTH | GLUT_DOUBLE | GLUT_RGBA);
-	glutInitWindowPosition(0, 0);
-	glutInitWindowSize(500, 500);
-	glutCreateWindow("Game Software Engineering KPU");
+	glutInitWindowPosition(60, 60);
+	glutInitWindowSize(windowWidth, windowHeight);
+	// The tutorial uses compatibility geometry and native Unicode bitmap text.
+	glutInitContextVersion(2, 1);
+	glutCreateWindow("GSE - Haeeon Neighborhood / Tutorial");
 
-	glewInit();
-	if (glewIsSupported("GL_VERSION_3_0"))
+	if (glewInit() != GLEW_OK)
 	{
-		std::cout << " GLEW Version is 3.0\n ";
+		std::cerr << "GLEW initialization failed.\n";
+		return 1;
 	}
-	else
-	{
-		std::cout << "GLEW 3.0 not supported\n ";
-	}
-
-	// Initialize Renderer
-	g_Renderer = new Renderer(500, 500);
-	if (!g_Renderer->IsInitialized())
-	{
-		std::cout << "Renderer could not be initialized.. \n";
-	}
+	view.reset(new TutorialView());
+	glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_GLUTMAINLOOP_RETURNS);
+	glutIgnoreKeyRepeat(1);
 
 	glutDisplayFunc(RenderScene);
-	glutIdleFunc(Idle);
 	glutKeyboardFunc(KeyInput);
-	glutMouseFunc(MouseInput);
-	glutSpecialFunc(SpecialKeyInput);
+	glutKeyboardUpFunc(KeyReleased);
+	glutReshapeFunc(Resize);
+	glutVisibilityFunc(Visibility);
+	glutCloseFunc(Close);
+	lastTime = glutGet(GLUT_ELAPSED_TIME);
+	glutTimerFunc(16, Tick, 0);
 
 	glutMainLoop();
 
-	delete g_Renderer;
+	view.reset();
 
     return 0;
 }

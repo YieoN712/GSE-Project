@@ -230,6 +230,33 @@ When prototyping, prefer a vertical slice containing:
 
 This slice should prove the relationship between ordinary life, subtle darkness, exploration, and 2.5D presentation before expanding map size.
 
+### Current first prototype: under-five-minute neighborhood tutorial
+
+The immediate prototype is defined in [튜토리얼_레벨_설계서.txt](튜토리얼_레벨_설계서.txt).
+The user requires WASD movement, suitable interaction keys, quarter-view 2.5D rendering
+that communicates the atmosphere, a small thematic quest, a small starting neighborhood,
+multiple residents, and a normal first-play completion time under five minutes.
+Use E for contextual interaction, Tab for objectives, and Esc for pause as the working controls.
+The working design uses eight residents, a bread-delivery quest, and a subtle memory anomaly.
+For this first prototype, a full day cycle, combat, dungeon, and streaming are deferred;
+the broader vertical-slice recommendations above remain later scope.
+Timing and visual quality remain unverified until user playtesting. Build and interactive
+result checks are normally performed by the user; provide verification steps instead of
+automatically building or launching the game.
+
+Implementation entrypoint: `SimpleGame.cpp` now runs `Tutorial` and `TutorialView` in
+`Tutorial.h` / `Tutorial.cpp`. See [튜토리얼_구현_확인.txt](튜토리얼_구현_확인.txt)
+for controls, manual acceptance checks, and differences from the initial level design.
+The updated prototype retains compatibility geometry and Windows Korean text, with an
+optional GLSL material pass, 2048-pixel directional shadow map with 5x5 PCF, and offscreen
+postprocessing. Procedural material patterns distinguish asphalt, paving, grass, brick,
+roof metal, glass, wood, and cloth. Characters use articulated procedural mesh animation;
+sprite-sheet assets are not implemented. Walking emits short-lived dust particles.
+Playable bounds are now 88 x 64 world units (four times the previous area); the core quest
+locations remain unchanged to preserve the under-five-minute route. Three quest residents
+remain interactable; five background residents slowly roam with building/boundary checks.
+Audio and saving remain outside this prototype. Build and visual acceptance are user-run.
+
 ## 10. Change control
 
 Future design and code changes should answer:
