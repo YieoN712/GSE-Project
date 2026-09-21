@@ -55,8 +55,11 @@ Use this order when tradeoffs are necessary:
 
 ## Working method
 
+- Format project-owned C++ and shader code using the root `.clang-format`: four spaces, Allman braces, one statement per line, expanded short functions/conditionals, and blank lines between definitions and logical steps.
+- Keep the existing naming conventions when doing formatting-only work. Preserve include order (especially `stdafx.h`), string contents, and file encoding; exclude bundled `SimpleGame/Dependencies` headers.
+- Build and interactive result checks are normally performed by the user. Do not automatically build or launch the game unless requested or genuinely required by an exceptional task.
+
 - Inspect the relevant current code and the design guide before implementing a feature.
 - State assumptions when a request leaves a design choice open, then choose the option that best preserves the pillars.
 - Keep documentation synchronized when a change establishes or revises canon, controls, save format, world conventions, or a major system contract.
 - Verify changes in proportion to risk. The user retains responsibility for final interactive gameplay and visual acceptance testing.
-
