@@ -399,3 +399,8 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Generated model cache (runtime fallback beside the executable).
+**/cache/level1_models_v*.bin
+**/cache/level1_models_v*.bin.*.tmp
+/tests/bin/

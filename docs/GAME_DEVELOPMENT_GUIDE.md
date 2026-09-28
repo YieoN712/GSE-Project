@@ -257,6 +257,28 @@ locations remain unchanged to preserve the under-five-minute route. Three quest 
 remain interactable; five background residents slowly roam with building/boundary checks.
 Audio and saving remain outside this prototype. Build and visual acceptance are user-run.
 
+### First playable RPG level: Echoes on the Way Home
+
+The default entrypoint now opens `LevelOne`; `--tutorial` retains the earlier tutorial.
+See [레벨1_구현_가이드.txt](레벨1_구현_가이드.txt) for the current controls, formulas,
+model cache contract, generation invariants, and manual validation instructions.
+
+- This is a simple experience-farming area within the modern neighborhood setting.
+- Space/J performs a timed forward melee attack; E collects drops; Q consumes a healing drink.
+- Experience raises character level and automatically increases HP, attack and defense.
+  Each level also grants a point spendable in the C stats panel using 1/2/3.
+- The first-level objective is character level 5 plus at least one spent stat point.
+  Region number 1 is not a cap on character level. Farming may continue afterward.
+- Map bounds remain 88 x 64 units. Seeded obstacle placement is accepted only if every
+  walkable tile remains connected to the safe start; collision clearance and spawn locations
+  follow the same grid. Buildings and ponds are intentional nonwalkable plots, not playable interiors.
+- Shop prefabs alone have awnings. Homes, apartments and utility buildings use distinct details.
+- Model templates are generated once, versioned/checksummed on disk and uploaded to GPU buffers.
+  Subsequent valid-cache launches load geometry; random layout and actor poses still update.
+- Tree crowns, drifting leaves and water ripples use vertex shaders in both scene and shadow passes.
+- Progress is session-local in this implementation. Persistent player saves are not yet implemented.
+- New simulation, cache and view code follow `.clang-format`; build and gameplay checks remain user-run.
+
 ## 10. Change control
 
 Future design and code changes should answer:

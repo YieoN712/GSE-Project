@@ -49,14 +49,45 @@ namespace
         varying vec3 world, normal;
         varying vec4 tint, shadow;
         uniform mat4 lightMatrix;
+        uniform mat4 objectMatrix;
+        uniform mat3 objectNormal;
+        uniform vec3 objectTint;
+        uniform float sceneTime;
+        uniform int material;
 
         void main()
         {
-            world = gl_Vertex.xyz;
-            normal = gl_Normal;
-            tint = gl_Color;
-            shadow = lightMatrix * gl_Vertex;
-            gl_Position = ftransform();
+            vec4 local = gl_Vertex;
+            vec3 original = (objectMatrix * local).xyz;
+            vec3 localNormal = gl_Normal;
+
+            if (material == 9)
+            {
+                float weight = clamp((local.y - 1.4) * .5, 0.0, 1.0);
+                local.x += sin(sceneTime * 1.7 + original.z * .7) * .16 * weight;
+                local.z += cos(sceneTime * 1.3 + original.x * .5) * .10 * weight;
+            }
+            else if (material == 10)
+            {
+                local.y += sin(original.x * 1.8 + sceneTime * 1.4) * .05 +
+                           cos(original.z * 2.1 - sceneTime * 1.2) * .04;
+                localNormal = normalize(vec3(-.09 * cos(original.x * 1.8 + sceneTime * 1.4),
+                                             1.0,
+                                             .084 * sin(original.z * 2.1 - sceneTime * 1.2)));
+            }
+            else if (material == 11)
+            {
+                float drift = fract(sceneTime * .20 + objectMatrix[3].x * .173);
+                local.x += drift * 3.0;
+                local.y -= drift * 2.4;
+                local.z += sin(sceneTime * 1.5 + objectMatrix[3].z) * .45;
+            }
+
+            world = (objectMatrix * local).xyz;
+            normal = normalize(objectNormal * localNormal);
+            tint = gl_Color * vec4(objectTint, 1.0);
+            shadow = lightMatrix * vec4(world, 1.0);
+            gl_Position = gl_ModelViewProjectionMatrix * local;
         }
     )GLSL";
     const char* worldFS = R"GLSL(
@@ -66,6 +97,7 @@ namespace
         uniform sampler2D shadowMap;
         uniform int material;
         uniform float shadowEnabled;
+        uniform float sceneTime;
 
         float hash(vec2 p)
         {
@@ -121,6 +153,16 @@ namespace
             else if (material == 8)
             {
                 color *= .96 + .06 * grain;
+            }
+            else if (material == 9 || material == 11)
+            {
+                color *= .88 + .14 * sin(world.x * 8.0) * cos(world.z * 6.0);
+            }
+            else if (material == 10)
+            {
+                float ripple = sin(world.x * 3.5 + world.z * 2.0 + sceneTime * 1.8);
+                color = mix(color, vec3(.62, .82, .83), .22 + .12 * ripple);
+                roughness = .07;
             }
             vec3 sun = normalize(vec3(-.45, .82, -.35));
             float diffuse = max(dot(n, sun), 0.0);
@@ -203,10 +245,20 @@ RenderEffects::RenderEffects()
     }
     sceneProgram = Program(worldVS, worldFS);
     postProgram = Program(postVS, postFS);
-    if (!sceneProgram || !postProgram)
+    shadowProgram = Program(worldVS, "#version 120\nvoid main() { gl_FragColor = vec4(1.0); }\n");
+    if (!sceneProgram || !postProgram || !shadowProgram)
         return;
 
     materialLocation = glGetUniformLocation(sceneProgram, "material");
+    auto objectLocations = [](GLuint program)
+    {
+        return ObjectUniforms{glGetUniformLocation(program, "objectMatrix"),
+                              glGetUniformLocation(program, "objectNormal"),
+                              glGetUniformLocation(program, "objectTint"),
+                              glGetUniformLocation(program, "material")};
+    };
+    sceneObject = objectLocations(sceneProgram);
+    shadowObject = objectLocations(shadowProgram);
 
     glGenTextures(1, &shadowTexture);
     glBindTexture(GL_TEXTURE_2D, shadowTexture);
@@ -263,6 +315,8 @@ RenderEffects::~RenderEffects()
         glDeleteProgram(sceneProgram);
     if (postProgram)
         glDeleteProgram(postProgram);
+    if (shadowProgram)
+        glDeleteProgram(shadowProgram);
 }
 
 void RenderEffects::Resize(int width, int height)
@@ -302,7 +356,7 @@ bool RenderEffects::BeginShadow(float x, float z)
     if (!enabled || !shadowFbo)
         return false;
     shadowPass = true;
-    glUseProgram(0);
+    glUseProgram(shadowProgram);
     glBindFramebuffer(GL_FRAMEBUFFER, shadowFbo);
     glViewport(0, 0, 2048, 2048);
     glClear(GL_DEPTH_BUFFER_BIT);
@@ -320,6 +374,8 @@ bool RenderEffects::BeginShadow(float x, float z)
     glGetFloatv(GL_PROJECTION_MATRIX, lightMatrix);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
+    glUniform1f(glGetUniformLocation(shadowProgram, "sceneTime"), sceneTime);
+    ObjectTransform(nullptr);
     return true;
 }
 
@@ -343,13 +399,55 @@ void RenderEffects::BeginScene(int width, int height)
         glBindTexture(GL_TEXTURE_2D, shadowTexture);
         glUniform1i(glGetUniformLocation(sceneProgram, "shadowMap"), 0);
         glUniform1f(glGetUniformLocation(sceneProgram, "shadowEnabled"), shadowFbo ? 1.f : 0.f);
+        glUniform1f(glGetUniformLocation(sceneProgram, "sceneTime"), sceneTime);
+        ObjectTransform(nullptr);
     }
 }
 
 void RenderEffects::Material(int m)
 {
-    if (enabled && !shadowPass)
-        glUniform1i(materialLocation, m);
+    if (enabled)
+    {
+        const auto& uniforms = shadowPass ? shadowObject : sceneObject;
+        glUniform1i(uniforms.material, m);
+    }
+}
+
+void RenderEffects::SetTime(float seconds)
+{
+    sceneTime = seconds;
+}
+
+void RenderEffects::ObjectTransform(const float* matrix, float r, float g, float b)
+{
+    if (!enabled)
+    {
+        return;
+    }
+
+    static const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const float* model = matrix ? matrix : identity;
+    float normal[9]{};
+
+    // All model transforms are translation * rotation * nonzero axis scale (no shear).
+    for (int column = 0; column < 3; ++column)
+    {
+        float lengthSquared = 0;
+        for (int row = 0; row < 3; ++row)
+        {
+            lengthSquared += model[column * 4 + row] * model[column * 4 + row];
+        }
+        for (int row = 0; row < 3; ++row)
+        {
+            normal[column * 3 + row] =
+                model[column * 4 + row] / (std::max)(.000001f, lengthSquared);
+        }
+    }
+
+    const auto& uniforms = shadowPass ? shadowObject : sceneObject;
+    glUniformMatrix4fv(uniforms.matrix, 1, GL_FALSE, model);
+    glUniformMatrix3fv(uniforms.normal, 1, GL_FALSE, normal);
+    glUniform3f(uniforms.tint, r, g, b);
 }
 
 void RenderEffects::Unlit()

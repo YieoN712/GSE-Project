@@ -741,17 +741,31 @@ void TutorialView::Draw(const Tutorial& game, int width, int height)
                 Box(x, 1.37f, b.z + b.depth / 2 + .10f, 1.17f, .08f, .15f, .94f, .90f, .75f);
             }
             Box(b.x, 0, b.z + b.depth / 2 + .07f, .85f, 1.8f, .1f, .38f, .36f, .30f);
-            Box(b.x, 2.25f, b.z + b.depth / 2 + .4f, b.width - .5f, .15f, 1.2f, .30f, .59f, .57f);
-            for (int i = 0; i < 5; ++i)
-                Box(b.x - 2 + i,
-                    2.23f,
-                    b.z + b.depth / 2 + .43f,
+            const std::wstring sign = b.sign;
+            if (sign == L"온기 빵집" || sign == L"오늘 편의점" || sign == L"꽃집")
+            {
+                Box(b.x,
+                    2.25f,
+                    b.z + b.depth / 2 + .4f,
+                    b.width - .5f,
+                    .15f,
+                    1.2f,
                     .30f,
-                    .18f,
-                    1.22f,
-                    .91f,
-                    .85f,
-                    .65f);
+                    .59f,
+                    .57f);
+                for (int i = 0; i < 5; ++i)
+                {
+                    Box(b.x - 2 + i,
+                        2.23f,
+                        b.z + b.depth / 2 + .43f,
+                        .30f,
+                        .18f,
+                        1.22f,
+                        .91f,
+                        .85f,
+                        .65f);
+                }
+            }
         }
         // Low props deliberately keep the central walking paths readable.
         for (int i = 0; i < 18; ++i)
