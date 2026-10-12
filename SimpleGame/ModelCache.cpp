@@ -466,11 +466,12 @@ void ModelCache::Draw(ModelKind kind,
                       int overrideMaterial)
 {
     float c = std::cos(heading), s = std::sin(heading);
-    const float transform[16] = {
+    const ActorMatrix local = {
         c * sx, 0, -s * sx, 0, 0, sy, 0, 0, s * sz, 0, c * sz, 0, x, y, z, 1};
-    effects.ObjectTransform(transform, r, g, b);
+    const ActorMatrix transform = Multiply(parentMatrix, local);
+    effects.ObjectTransform(transform.data(), r, g, b);
     glPushMatrix();
-    glMultMatrixf(transform);
+    glMultMatrixf(transform.data());
     glEnableClientState(GL_VERTEX_ARRAY);
     glEnableClientState(GL_NORMAL_ARRAY);
     glEnableClientState(GL_COLOR_ARRAY);
@@ -494,4 +495,9 @@ void ModelCache::Draw(ModelKind kind,
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glPopMatrix();
     effects.ObjectTransform(nullptr);
+}
+
+void ModelCache::SetParentMatrix(const ActorMatrix& matrix)
+{
+    parentMatrix = matrix;
 }

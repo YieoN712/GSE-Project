@@ -143,7 +143,7 @@ tests/LevelOneTests.cpp: 그래픽 없이 성장·연결성·중복 보상을 �
 
 선택적인 로직 회귀 검사(Visual Studio 개발자 명령 프롬프트, 저장소 루트):
 mkdir tests\bin
-cl /std:c++17 /EHsc /utf-8 /I SimpleGame tests\LevelOneTests.cpp SimpleGame\LevelOne.cpp /Fo:tests\bin\ /Fe:tests\bin\LevelOneTests.exe
+cl /std:c++17 /EHsc /utf-8 /I SimpleGame tests\LevelOneTests.cpp SimpleGame\LevelOne.cpp SimpleGame\Actor.cpp SimpleGame\SceneGraph.cpp /Fotests\bin\ /Fetests\bin\LevelOneTests.exe
 tests\bin\LevelOneTests.exe
 
 회귀 검사는 경험치 초과 처리·포인트 소모·100개 시드의 타일 연결 및 인접 통로,

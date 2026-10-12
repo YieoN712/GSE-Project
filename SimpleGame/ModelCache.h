@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Dependencies/glew.h"
+#include "Actor.h"
 
 #include <array>
 #include <cstdint>
@@ -8,23 +9,6 @@
 #include <vector>
 
 class RenderEffects;
-
-enum class ModelKind : std::uint32_t
-{
-    Box,
-    Sphere,
-    Shop,
-    Home,
-    Apartments,
-    Utility,
-    Tree,
-    Water,
-    Leaf,
-    Potion,
-    Shard,
-    Weapon,
-    Count
-};
 
 class ModelCache
 {
@@ -62,11 +46,14 @@ public:
               float b = 1,
               int overrideMaterial = -1);
 
+    void SetParentMatrix(const ActorMatrix& matrix);
+
     bool loadedFromDisk = false;
     bool savedToDisk = false;
     std::wstring cachePath;
 
 private:
+    ActorMatrix parentMatrix = IdentityMatrix();
     std::array<std::vector<Part>, static_cast<size_t>(ModelKind::Count)> meshes;
     bool Load();
     bool Save() const;

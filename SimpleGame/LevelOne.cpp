@@ -98,6 +98,7 @@ bool PlayerStats::SpendPoint(int choice)
 }
 
 LevelOne::LevelOne(std::uint32_t seed)
+    : buildings(scene), trees(scene), enemies(scene), drops(scene), dust(scene)
 {
     Reset(seed);
 }
@@ -312,6 +313,7 @@ void LevelOne::Generate()
         if (spaced)
         {
             LevelEnemy enemy;
+            enemy.name = "Echo";
             enemy.position = enemy.home = point;
             enemy.kind = int(enemies.size() % 3);
             enemy.maximumHealth = enemy.health = 34 + enemy.kind * 12;
@@ -327,21 +329,34 @@ void LevelOne::Generate()
 
 void LevelOne::Reset(std::uint32_t seed)
 {
+    if (!FindPlayer())
+    {
+        playerId = scene.Spawn<PlayerActor>(0).Id();
+    }
+    scene.Reparent(Player().Id(), 0);
     mapSeed = seed;
     random.seed(seed);
+    ActorList<MeshActor>(scene).clear();
+    ActorList<MarkerActor>(scene).clear();
     stats = PlayerStats{};
     drops.clear();
     feedback.clear();
     dust.clear();
     potions = 3;
     fragments = kills = 0;
-    time = heading = stride = speed = attackTime = invulnerable = 0;
+    time = Player().heading = Player().stride = Player().speed = attackTime = invulnerable = 0;
     attackCooldown = pathTimer = stepDistance = 0;
     attackResolved = true;
     paused = statsOpen = accomplished = false;
     ClearKeys();
     Generate();
-    player = camera = spawn;
+    BuildScenery();
+    Player().name = "Player";
+    Player().active = Player().visible = true;
+    Player().scale = {};
+    Player().height = 0;
+    scene.Reparent(Player().Id(), 0);
+    Player().position = camera = spawn;
     drops.push_back({{spawn.x + 2, spawn.z}, DropKind::Potion});
     RebuildPaths();
     Notify(L"레벨 1 · 귀갓길의 잔향 | 잔향을 처치하고 캐릭터 Lv.5와 스탯 배분을 달성하세요.");
@@ -411,7 +426,7 @@ bool LevelOne::Visible(LevelPoint from, LevelPoint to) const
 void LevelOne::RebuildPaths()
 {
     distances.fill(-1);
-    int start = Cell(player);
+    int start = Cell(Player().position);
     if (start < 0)
     {
         return;
@@ -457,7 +472,7 @@ void LevelOne::Notify(const std::wstring& message)
 void LevelOne::GainExperience(int amount)
 {
     bool leveled = stats.AddExperience(amount);
-    feedback.push_back({player, L"+" + std::to_wstring(amount) + L" EXP", 1.4f, true});
+    feedback.push_back({Player().position, L"+" + std::to_wstring(amount) + L" EXP", 1.4f, true});
 
     if (leveled)
     {
@@ -477,7 +492,7 @@ void LevelOne::Kill(LevelEnemy& enemy)
     // Bound accumulated uncollected loot during indefinite farming.
     if (drops.size() >= 96)
     {
-        drops.erase(drops.begin());
+        drops.erase_at(0);
     }
 
     drops.push_back({enemy.position, kind});
@@ -487,12 +502,17 @@ void LevelOne::ResolveAttack()
 {
     for (auto& enemy : enemies)
     {
-        float distance = Distance(player, enemy.position);
-        float dot = (enemy.position.x - player.x) * std::sin(heading) +
-                    (enemy.position.z - player.z) * std::cos(heading);
+        if (!scene.IsActive(enemy.Id()))
+        {
+            continue;
+        }
+        float distance = Distance(Player().position, enemy.position);
+        float dot = (enemy.position.x - Player().position.x) * std::sin(Player().heading) +
+                    (enemy.position.z - Player().position.z) * std::cos(Player().heading);
 
         if (enemy.state == EnemyState::Dead || distance > 2.3f ||
-            (distance > .5f && dot / distance < .10f) || !Visible(player, enemy.position))
+            (distance > .5f && dot / distance < .10f) ||
+            !Visible(Player().position, enemy.position))
         {
             continue;
         }
@@ -513,13 +533,17 @@ void LevelOne::UpdateEnemies(float dt)
 {
     for (auto& enemy : enemies)
     {
+        if (!scene.IsActive(enemy.Id()))
+        {
+            continue;
+        }
         enemy.hitFlash = (std::max)(0.f, enemy.hitFlash - dt);
         enemy.timer -= dt;
-        float distance = Distance(player, enemy.position);
+        float distance = Distance(Player().position, enemy.position);
 
         if (enemy.state == EnemyState::Dead)
         {
-            if (enemy.timer <= 0 && Distance(player, enemy.home) > 5)
+            if (enemy.timer <= 0 && Distance(Player().position, enemy.home) > 5)
             {
                 enemy.position = enemy.home;
                 enemy.health = enemy.maximumHealth;
@@ -533,13 +557,15 @@ void LevelOne::UpdateEnemies(float dt)
         {
             if (enemy.timer <= 0)
             {
-                if (distance < 1.65f && invulnerable <= 0 && Distance(player, spawn) > 5 &&
-                    Visible(enemy.position, player))
+                if (scene.IsActive(Player().Id()) && distance < 1.65f && invulnerable <= 0 &&
+                    Distance(Player().position, spawn) > 5 &&
+                    Visible(enemy.position, Player().position))
                 {
                     int damage = (std::max)(1, 12 + enemy.kind * 4 - stats.Defense());
                     stats.health = (std::max)(0, stats.health - damage);
                     invulnerable = .65f;
-                    feedback.push_back({player, L"-" + std::to_wstring(damage), 1, false});
+                    feedback.push_back(
+                        {Player().position, L"-" + std::to_wstring(damage), 1, false});
                 }
 
                 enemy.state = EnemyState::Recovery;
@@ -554,12 +580,14 @@ void LevelOne::UpdateEnemies(float dt)
             continue;
         }
 
-        bool aggro = distance < 10 && Distance(player, spawn) > 5;
+        bool aggro = scene.IsActive(Player().Id()) && distance < 10 &&
+                     Distance(Player().position, spawn) > 5;
         enemy.state = aggro ? EnemyState::Chasing : EnemyState::Roaming;
 
-        if (aggro && distance < 1.3f && Visible(enemy.position, player))
+        if (aggro && distance < 1.3f && Visible(enemy.position, Player().position))
         {
-            enemy.heading = std::atan2(player.x - enemy.position.x, player.z - enemy.position.z);
+            enemy.heading = std::atan2(Player().position.x - enemy.position.x,
+                                       Player().position.z - enemy.position.z);
             enemy.state = EnemyState::Windup;
             enemy.timer = .65f;
             continue;
@@ -570,9 +598,9 @@ void LevelOne::UpdateEnemies(float dt)
 
         if (aggro)
         {
-            if (Visible(enemy.position, player))
+            if (Visible(enemy.position, Player().position))
             {
-                target = player;
+                target = Player().position;
             }
             else
             {
@@ -619,16 +647,26 @@ void LevelOne::UpdateEnemies(float dt)
 
 int LevelOne::NearestDrop() const
 {
+    if (!FindPlayer())
+    {
+        return -1;
+    }
     int best = -1;
     float range = 1.8f;
 
-    for (size_t i = 0; i < drops.size(); ++i)
+    int index = 0;
+    for (const auto& drop : drops)
     {
-        float distance = Distance(player, drops[i].position);
-
-        if (distance < range && Visible(player, drops[i].position))
+        int current = index++;
+        if (!scene.IsActive(drop.Id()))
         {
-            best = int(i);
+            continue;
+        }
+        float distance = Distance(Player().position, drop.position);
+
+        if (distance < range && Visible(Player().position, drop.position))
+        {
+            best = current;
             range = distance;
         }
     }
@@ -646,7 +684,7 @@ void LevelOne::PickUp()
     }
 
     DropKind kind = drops[index].kind;
-    drops.erase(drops.begin() + index);
+    drops.erase_at(index);
 
     if (kind == DropKind::Potion)
     {
@@ -668,6 +706,10 @@ void LevelOne::PickUp()
 
 void LevelOne::Update(float dt)
 {
+    if (!FindPlayer())
+    {
+        return;
+    }
     if (paused || statsOpen || stats.health <= 0)
     {
         return;
@@ -681,9 +723,10 @@ void LevelOne::Update(float dt)
     attackTime = (std::max)(0.f, attackTime - dt);
     pathTimer -= dt;
 
-    LevelPoint previous = player;
-    float x = float(keys['d']) - float(keys['a']);
-    float z = float(keys['w']) - float(keys['s']);
+    LevelPoint previous = Player().position;
+    bool playerActive = scene.IsActive(Player().Id());
+    float x = playerActive ? float(keys['d']) - float(keys['a']) : 0;
+    float z = playerActive ? float(keys['w']) - float(keys['s']) : 0;
     float length = std::hypot(x, z);
 
     if (length > 0)
@@ -691,23 +734,23 @@ void LevelOne::Update(float dt)
         float dx = (x - z) * .70710678f / length;
         float dz = (-x - z) * .70710678f / length;
         float movement = dt * (attackTime > 0 ? 2.1f : 3.7f);
-        Move(player, dx * movement, dz * movement);
+        Move(Player().position, dx * movement, dz * movement);
 
         if (attackTime <= 0)
         {
-            heading = std::atan2(dx, dz);
+            Player().heading = std::atan2(dx, dz);
         }
     }
 
-    float moved = Distance(previous, player);
-    speed = dt > 0 ? moved / dt : 0;
-    stride += moved * 6;
+    float moved = Distance(previous, Player().position);
+    Player().speed = dt > 0 ? moved / dt : 0;
+    Player().stride += moved * 6;
     stepDistance += moved;
 
     if (stepDistance >= .55f)
     {
         stepDistance = 0;
-        dust.push_back({player, 0});
+        dust.push_back({Player().position, 0});
     }
 
     if (pathTimer <= 0)
@@ -716,14 +759,14 @@ void LevelOne::Update(float dt)
         pathTimer = .25f;
     }
 
-    if ((keys[' '] || keys['j']) && attackCooldown <= 0)
+    if (playerActive && (keys[' '] || keys['j']) && attackCooldown <= 0)
     {
         attackCooldown = .55f;
         attackTime = .36f;
         attackResolved = false;
     }
 
-    if (!attackResolved && attackTime <= .23f)
+    if (playerActive && !attackResolved && attackTime <= .23f)
     {
         ResolveAttack();
         attackResolved = true;
@@ -736,9 +779,10 @@ void LevelOne::Update(float dt)
         item.life -= dt;
     }
 
-    for (auto& item : dust)
+    scene.Update(dt);
+    if (!FindPlayer())
     {
-        item.age += dt;
+        return;
     }
 
     feedback.erase(std::remove_if(feedback.begin(),
@@ -748,15 +792,13 @@ void LevelOne::Update(float dt)
                                       return f.life <= 0;
                                   }),
                    feedback.end());
-    dust.erase(std::remove_if(dust.begin(),
-                              dust.end(),
-                              [](const LevelDust& d)
-                              {
-                                  return d.age > .8f;
-                              }),
-               dust.end());
-    camera.x += (Clamp(player.x, -37, 37) - camera.x) * (1 - std::exp(-5 * dt));
-    camera.z += (Clamp(player.z, -26, 26) - camera.z) * (1 - std::exp(-5 * dt));
+    dust.RemoveIf(
+        [](const LevelDust& item)
+        {
+            return item.age > .8f;
+        });
+    camera.x += (Clamp(Player().position.x, -37, 37) - camera.x) * (1 - std::exp(-5 * dt));
+    camera.z += (Clamp(Player().position.z, -26, 26) - camera.z) * (1 - std::exp(-5 * dt));
 
     if (!accomplished && stats.level >= 5 && stats.strength + stats.vitality + stats.resilience > 0)
     {
@@ -781,6 +823,15 @@ void LevelOne::KeyDown(unsigned char raw)
 
     keys[key] = true;
 
+    if (!FindPlayer())
+    {
+        if (key == 'r')
+        {
+            Reset(mapSeed);
+        }
+        return;
+    }
+
     if (key == 27)
     {
         if (statsOpen)
@@ -800,7 +851,7 @@ void LevelOne::KeyDown(unsigned char raw)
     {
         if (key == 'r')
         {
-            player = camera = spawn;
+            Player().position = camera = spawn;
             stats.health = stats.MaximumHealth();
             potions = (std::max)(potions, 1);
             invulnerable = 3;
@@ -842,6 +893,11 @@ void LevelOne::KeyDown(unsigned char raw)
         return;
     }
 
+    if (!scene.IsActive(Player().Id()))
+    {
+        return;
+    }
+
     if (key == 'e')
     {
         PickUp();
@@ -858,4 +914,127 @@ void LevelOne::KeyDown(unsigned char raw)
 void LevelOne::KeyUp(unsigned char key)
 {
     keys[Lower(key)] = false;
+}
+
+void LevelOne::BuildScenery()
+{
+    auto mesh = [&](ModelKind model,
+                    float x,
+                    float y,
+                    float z,
+                    float sx,
+                    float sy,
+                    float sz,
+                    float r,
+                    float g,
+                    float b,
+                    int material)
+    {
+        auto& actor = scene.Spawn<MeshActor>(0);
+        actor.name = "Scenery";
+        actor.model = model;
+        actor.position = {x, z};
+        actor.height = y;
+        actor.scale = {sx, sy, sz};
+        actor.r = r;
+        actor.g = g;
+        actor.b = b;
+        actor.material = material;
+        return actor.Id();
+    };
+    for (int z = 0; z < Rows; ++z)
+    {
+        for (int x = 0; x < Columns;)
+        {
+            LevelTile tile = tiles[z * Columns + x];
+            int end = x + 1;
+            while (end < Columns && tiles[z * Columns + end] == tile)
+            {
+                ++end;
+            }
+            LevelPoint point = Center(x, z);
+            if (tile == LevelTile::Water)
+            {
+                for (int col = x; col < end; ++col)
+                {
+                    LevelPoint water = Center(col, z);
+                    mesh(ModelKind::Water, water.x, -.05f, water.z, 2, 1, 2, 1, 1, 1, -1);
+                }
+            }
+            else
+            {
+                bool road = tile == LevelTile::Road;
+                mesh(ModelKind::Box,
+                     point.x + end - x - 1,
+                     -.10f,
+                     point.z,
+                     (end - x) * 2.f,
+                     .10f,
+                     2,
+                     road ? .54f : .53f,
+                     road ? .56f : .67f,
+                     road ? .55f : .40f,
+                     road ? 3 : 1);
+            }
+            x = end;
+        }
+    }
+    for (auto& tree : trees)
+    {
+        auto& leaf = scene.Spawn<MeshActor>(tree.Id());
+        leaf.name = "Windblown leaf";
+        leaf.model = ModelKind::Leaf;
+        leaf.height = 3;
+    }
+    mesh(ModelKind::Box, spawn.x, .01f, spawn.z, 3.6f, .06f, 3.6f, .82f, .81f, .70f, 3);
+    // Children use local coordinates, so moving the post also moves its lamp.
+    ActorId lamp =
+        mesh(ModelKind::Box, spawn.x - 2, 0, spawn.z, .14f, 2.8f, .14f, .32f, .39f, .40f, 5);
+    auto& light = scene.Spawn<MeshActor>(lamp);
+    light.name = "Lamp globe";
+    light.model = ModelKind::Sphere;
+    light.height = 2.85f / 2.8f;
+    light.scale = {.22f / .14f, .20f / 2.8f, .22f / .14f};
+    light.r = .99f;
+    light.g = .87f;
+    light.b = .49f;
+    auto& safe = scene.Spawn<MarkerActor>(0, MarkerKind::Spawn);
+    safe.position = spawn;
+    scene.Spawn<MarkerActor>(Player().Id(), MarkerKind::Player);
+    scene.Spawn<MarkerActor>(Player().Id(), MarkerKind::Attack);
+    for (const auto& enemy : enemies)
+    {
+        scene.Spawn<MarkerActor>(enemy.Id(), MarkerKind::Enemy);
+    }
+    scene.FlushDestroyed();
+}
+
+PlayerActor* LevelOne::FindPlayer()
+{
+    return dynamic_cast<PlayerActor*>(scene.Find(playerId));
+}
+
+const PlayerActor* LevelOne::FindPlayer() const
+{
+    return dynamic_cast<const PlayerActor*>(scene.Find(playerId));
+}
+
+PlayerActor& LevelOne::Player()
+{
+    auto* actor = FindPlayer();
+    if (!actor)
+    {
+        throw std::logic_error("Level player has been removed.");
+    }
+    return *actor;
+}
+
+const PlayerActor& LevelOne::Player() const
+{
+    const auto* actor = FindPlayer();
+    if (!actor)
+    {
+        throw std::logic_error("Level player has been removed.");
+    }
+    return *actor;
 }

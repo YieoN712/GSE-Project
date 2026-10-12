@@ -63,7 +63,7 @@ namespace
 
             if (material == 9)
             {
-                float weight = clamp((local.y - 1.4) * .5, 0.0, 1.0);
+                float weight = clamp((original.y - 1.4) * .5, 0.0, 1.0);
                 local.x += sin(sceneTime * 1.7 + original.z * .7) * .16 * weight;
                 local.z += cos(sceneTime * 1.3 + original.x * .5) * .10 * weight;
             }
@@ -81,6 +81,10 @@ namespace
                 local.x += drift * 3.0;
                 local.y -= drift * 2.4;
                 local.z += sin(sceneTime * 1.5 + objectMatrix[3].z) * .45;
+            }
+            else if (material == 12)
+            {
+                local.z += sin(sceneTime * 1.5 + original.x * 1.1) * .10 * (1.0 - local.y);
             }
 
             world = (objectMatrix * local).xyz;
@@ -150,7 +154,7 @@ namespace
             {
                 color *= .86 + .12 * sin(uv.x * 21.0 + sin(uv.y * 3.0)) + .05 * grain;
             }
-            else if (material == 8)
+            else if (material == 8 || material == 12)
             {
                 color *= .96 + .06 * grain;
             }
@@ -429,19 +433,26 @@ void RenderEffects::ObjectTransform(const float* matrix, float r, float g, float
     const float* model = matrix ? matrix : identity;
     float normal[9]{};
 
-    // All model transforms are translation * rotation * nonzero axis scale (no shear).
-    for (int column = 0; column < 3; ++column)
+    // Cofactor / determinant handles shear from rotated, nonuniformly scaled parents.
+    const float a = model[0], b0 = model[4], c = model[8];
+    const float d = model[1], e = model[5], f = model[9];
+    const float g0 = model[2], h0 = model[6], i = model[10];
+    const float determinant = a * (e * i - f * h0) - b0 * (d * i - f * g0) + c * (d * h0 - e * g0);
+    if (determinant > .000001f || determinant < -.000001f)
     {
-        float lengthSquared = 0;
-        for (int row = 0; row < 3; ++row)
-        {
-            lengthSquared += model[column * 4 + row] * model[column * 4 + row];
-        }
-        for (int row = 0; row < 3; ++row)
-        {
-            normal[column * 3 + row] =
-                model[column * 4 + row] / (std::max)(.000001f, lengthSquared);
-        }
+        normal[0] = (e * i - f * h0) / determinant;
+        normal[1] = (c * h0 - b0 * i) / determinant;
+        normal[2] = (b0 * f - c * e) / determinant;
+        normal[3] = (f * g0 - d * i) / determinant;
+        normal[4] = (a * i - c * g0) / determinant;
+        normal[5] = (c * d - a * f) / determinant;
+        normal[6] = (d * h0 - e * g0) / determinant;
+        normal[7] = (b0 * g0 - a * h0) / determinant;
+        normal[8] = (a * e - b0 * d) / determinant;
+    }
+    else
+    {
+        normal[0] = normal[4] = normal[8] = 1;
     }
 
     const auto& uniforms = shadowPass ? shadowObject : sceneObject;

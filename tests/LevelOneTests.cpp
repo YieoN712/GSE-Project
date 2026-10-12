@@ -84,7 +84,7 @@ namespace
         level.enemies.clear();
         level.drops.clear();
         LevelEnemy enemy;
-        enemy.position = enemy.home = {level.player.x, level.player.z + 1};
+        enemy.position = enemy.home = {level.Player().position.x, level.Player().position.z + 1};
         enemy.health = 1;
         level.enemies.push_back(enemy);
         level.KeyDown(' ');
@@ -131,7 +131,8 @@ namespace
         level.KeyDown('r');
         level.KeyUp('r');
         Check(level.stats.health == level.stats.MaximumHealth() &&
-                  level.stats.totalExperience == experience && !level.Blocked(level.player),
+                  level.stats.totalExperience == experience &&
+                  !level.Blocked(level.Player().position),
               "Recovery must preserve growth and return to safe ground.");
     }
 } // namespace

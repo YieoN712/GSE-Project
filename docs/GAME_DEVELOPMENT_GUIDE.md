@@ -281,6 +281,22 @@ model cache contract, generation invariants, and manual validation instructions.
 
 ## 10. Change control
 
+### Actor and SceneGraph contract
+
+- Tutorial and level 1 place world objects as `Actor` subclasses owned by `SceneGraph`.
+  `ActorList<T>` is a non-owning typed query; use actor IDs for durable references.
+- Local ground position is X-Z, `height` is Y, and `heading` is Y-axis yaw in radians.
+  Scene traversal composes parent transforms before children. `Reparent` keeps the local pose.
+- Parent active/visible/shadow flags affect descendants. Hidden actors still update;
+  inactive actors do not. `Destroy` invalidates a subtree immediately; cleanup runs at frame boundaries.
+- HUD, dialogue, stats and world-anchored labels use `UiCanvas`, `LevelOneUi` and `TutorialUi`.
+  UI is drawn separately and never inserted into the scene graph.
+- Current gameplay controllers keep characters on scene roots. Navigation remains generated
+  map data; moving terrain/building actors does not automatically rebake the navigation grid.
+- Geometry parts within a model are render details of their owning actor, not separate gameplay entities.
+- Optional CPU checks: compile `tests/SceneGraphTests.cpp` (or `tests/LevelOneTests.cpp`)
+  with `SimpleGame/Actor.cpp`, `SimpleGame/SceneGraph.cpp` and `SimpleGame/LevelOne.cpp`, using C++17.
+
 Future design and code changes should answer:
 
 - How does this help the player value a person, place, routine, or memory?

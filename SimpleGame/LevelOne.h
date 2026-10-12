@@ -1,16 +1,14 @@
 #pragma once
 
+#include "SceneGraph.h"
+
 #include <array>
 #include <cstdint>
 #include <random>
 #include <string>
 #include <vector>
 
-struct LevelPoint
-{
-    float x = 0;
-    float z = 0;
-};
+using LevelPoint = WorldPoint;
 
 enum class LevelTile : unsigned char
 {
@@ -28,9 +26,18 @@ enum class BuildingStyle
     Utility
 };
 
-struct LevelBuilding
+struct LevelBuilding : Actor
 {
-    LevelPoint position;
+    LevelBuilding(LevelPoint point = {},
+                  int width = 0,
+                  int depth = 0,
+                  BuildingStyle type = BuildingStyle::Home)
+        : columns(width), rows(depth), style(type)
+    {
+        position = point;
+        name = "Building";
+    }
+
     int columns = 0;
     int rows = 0;
     BuildingStyle style = BuildingStyle::Home;
@@ -65,11 +72,9 @@ enum class EnemyState
     Dead
 };
 
-struct LevelEnemy
+struct LevelEnemy : Actor
 {
-    LevelPoint position;
     LevelPoint home;
-    float heading = 0;
     float stride = 0;
     float timer = 0;
     float hitFlash = 0;
@@ -86,9 +91,14 @@ enum class DropKind
     Weapon
 };
 
-struct LevelDrop
+struct LevelDrop : Actor
 {
-    LevelPoint position;
+    LevelDrop(LevelPoint point = {}, DropKind type = DropKind::Memory) : kind(type)
+    {
+        position = point;
+        name = "Drop";
+    }
+
     DropKind kind = DropKind::Memory;
 };
 
@@ -100,10 +110,16 @@ struct LevelFeedback
     bool positive = false;
 };
 
-struct LevelDust
+using LevelDust = DustActor;
+
+struct LevelTree : MeshActor
 {
-    LevelPoint position;
-    float age = 0;
+    LevelTree(LevelPoint point = {})
+    {
+        position = point;
+        model = ModelKind::Tree;
+        name = "Tree";
+    }
 };
 
 // No OpenGL or Windows dependency: map topology, combat and progression live here.
@@ -116,6 +132,10 @@ public:
 
     explicit LevelOne(std::uint32_t seed);
     void Reset(std::uint32_t seed);
+    PlayerActor* FindPlayer();
+    const PlayerActor* FindPlayer() const;
+    PlayerActor& Player();
+    const PlayerActor& Player() const;
     void Update(float dt);
     void KeyDown(unsigned char key);
     void KeyUp(unsigned char key);
@@ -128,22 +148,19 @@ public:
     int Cell(LevelPoint position) const;
     int NearestDrop() const;
 
+    SceneGraph scene;
     std::array<LevelTile, Columns * Rows> tiles{};
-    std::vector<LevelBuilding> buildings;
-    std::vector<LevelPoint> trees;
-    std::vector<LevelEnemy> enemies;
-    std::vector<LevelDrop> drops;
+    ActorList<LevelBuilding> buildings;
+    ActorList<LevelTree> trees;
+    ActorList<LevelEnemy> enemies;
+    ActorList<LevelDrop> drops;
     std::vector<LevelFeedback> feedback;
-    std::vector<LevelDust> dust;
+    ActorList<LevelDust> dust;
     PlayerStats stats;
-    LevelPoint player;
     LevelPoint camera;
     LevelPoint spawn;
     std::uint32_t mapSeed = 0;
     float time = 0;
-    float heading = 0;
-    float stride = 0;
-    float speed = 0;
     float attackTime = 0;
     float invulnerable = 0;
     float toastTime = 0;
@@ -157,6 +174,7 @@ public:
     std::wstring toast;
 
 private:
+    ActorId playerId = 0;
     std::array<bool, 256> keys{};
     std::array<int, Columns * Rows> distances{};
     std::mt19937 random;
@@ -165,6 +183,7 @@ private:
     float stepDistance = 0;
     bool attackResolved = true;
     void Generate();
+    void BuildScenery();
     void RebuildPaths();
     void Move(LevelPoint& position, float dx, float dz) const;
     void UpdateEnemies(float dt);
