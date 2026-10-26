@@ -84,6 +84,31 @@ struct LevelEnemy : Actor
     EnemyState state = EnemyState::Roaming;
 };
 
+struct LevelResident : Actor
+{
+    std::wstring title;
+    std::wstring role;
+    LevelPoint home;
+    std::vector<LevelPoint> route;
+    size_t waypoint = 0;
+    float stride = 0;
+    float speed = 0;
+    float rest = 0;
+    int kind = 0;
+    bool greeted = false;
+};
+
+struct NeighborhoodState
+{
+    int neighborsMet = 0;
+    int outskirtsReports = 0;
+    std::array<bool, 3> heardRumors{};
+    int Reputation() const;
+    const wchar_t* ReputationLabel() const;
+    const wchar_t* Atmosphere() const;
+    static const std::array<const wchar_t*, 3> Rumors;
+};
+
 enum class DropKind
 {
     Potion,
@@ -129,6 +154,8 @@ public:
     static constexpr int Columns = 44;
     static constexpr int Rows = 32;
     static constexpr float TileSize = 2;
+    static constexpr float TownRadius = 18;
+    static constexpr float OutskirtsRadius = 24;
 
     explicit LevelOne(std::uint32_t seed);
     void Reset(std::uint32_t seed);
@@ -147,16 +174,25 @@ public:
     LevelPoint Center(int column, int row) const;
     int Cell(LevelPoint position) const;
     int NearestDrop() const;
+    const LevelResident* NearestResident() const;
+    bool InTown(LevelPoint point) const;
+    bool InOutskirts(LevelPoint point) const;
 
     SceneGraph scene;
     std::array<LevelTile, Columns * Rows> tiles{};
     ActorList<LevelBuilding> buildings;
     ActorList<LevelTree> trees;
     ActorList<LevelEnemy> enemies;
+    ActorList<LevelResident> residents;
     ActorList<LevelDrop> drops;
     std::vector<LevelFeedback> feedback;
     ActorList<LevelDust> dust;
     PlayerStats stats;
+    NeighborhoodState neighborhood;
+    ActorId conversationActor = 0;
+    float conversationTime = 0;
+    std::vector<std::wstring> conversation;
+    bool neighborhoodOpen = false;
     LevelPoint camera;
     LevelPoint spawn;
     std::uint32_t mapSeed = 0;
@@ -187,6 +223,10 @@ private:
     void RebuildPaths();
     void Move(LevelPoint& position, float dx, float dz) const;
     void UpdateEnemies(float dt);
+    void BuildResidents();
+    void UpdateResidents(float dt);
+    void PlanResidentWalk(LevelResident& resident);
+    void TalkToResident();
     void ResolveAttack();
     void Kill(LevelEnemy& enemy);
     void PickUp();

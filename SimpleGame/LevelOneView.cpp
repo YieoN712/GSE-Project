@@ -46,13 +46,14 @@ struct LevelOneView::Implementation
                    float attack,
                    bool enemy,
                    int kind,
-                   bool flash)
+                   bool flash,
+                   bool armed = true)
     {
         float swing = walking ? std::sin(stride) * .20f : 0;
         float bounce = walking ? std::abs(std::sin(stride)) * .04f : 0;
-        float r = enemy ? .45f + kind * .07f : .25f;
-        float g = enemy ? .40f : .64f;
-        float b = enemy ? .63f : .69f;
+        float r = enemy ? .45f + kind * .07f : kind == 0 ? .25f : .40f + (kind % 3) * .16f;
+        float g = enemy ? .40f : kind == 0 ? .64f : .40f + (kind % 4) * .10f;
+        float b = enemy ? .63f : kind == 0 ? .69f : .38f + (kind % 2) * .22f;
 
         if (flash)
         {
@@ -110,7 +111,7 @@ struct LevelOneView::Implementation
                  enemy ? .43f : .20f);
         }
 
-        if (!enemy)
+        if (!enemy && armed)
         {
             float swingAngle = heading + (attack > 0 ? (1 - attack / .36f) * 2.3f - 1.15f : .5f);
             models.Draw(ModelKind::Weapon,
@@ -199,6 +200,18 @@ struct LevelOneView::Implementation
                                 cutaway ? .80f : 1,
                                 cutaway ? .70f : 1,
                                 cutaway ? 4 : -1);
+                }
+                else if (const auto* resident = dynamic_cast<const LevelResident*>(&actor))
+                {
+                    Character({},
+                              0,
+                              resident->stride,
+                              resident->speed > .02f,
+                              0,
+                              false,
+                              resident->kind + 1,
+                              false,
+                              false);
                 }
                 else if (const auto* enemy = dynamic_cast<const LevelEnemy*>(&actor))
                 {

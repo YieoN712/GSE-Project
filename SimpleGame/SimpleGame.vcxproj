@@ -161,6 +161,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Actor.h" />
+    <ClInclude Include="MonitorServer.h" />
+    <ClInclude Include="MonitorSnapshot.h" />
     <ClInclude Include="SceneGraph.h" />
     <ClInclude Include="UiCanvas.h" />
     <ClInclude Include="LevelOneUi.h" />
@@ -176,6 +178,16 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Actor.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="MonitorServer.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="MonitorSnapshot.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
@@ -233,9 +245,14 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\SolidRect.fs" />
+    <None Include="monitor\index.html" />
     <None Include="Shaders\SolidRect.vs" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="CopyMonitorDashboard" AfterTargets="Build">
+    <MakeDir Directories="$(OutDir)monitor" />
+    <Copy SourceFiles="$(ProjectDir)monitor\index.html" DestinationFolder="$(OutDir)monitor" SkipUnchangedFiles="true" />
+  </Target>
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>

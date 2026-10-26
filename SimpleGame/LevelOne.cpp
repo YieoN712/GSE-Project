@@ -98,9 +98,42 @@ bool PlayerStats::SpendPoint(int choice)
 }
 
 LevelOne::LevelOne(std::uint32_t seed)
-    : buildings(scene), trees(scene), enemies(scene), drops(scene), dust(scene)
+    : buildings(scene), trees(scene), enemies(scene), residents(scene), drops(scene), dust(scene)
 {
     Reset(seed);
+}
+
+const std::array<const wchar_t*, 3> NeighborhoodState::Rumors = {
+    L"해 질 무렵, 외곽 길에서 발소리가 하나 더 들린대요.",
+    L"비어 있는 우편함에 누가 매일 새 이름표를 붙인대요.",
+    L"귀갓길을 살펴 주는 이웃이 생겨 조금 안심된대요."};
+
+int NeighborhoodState::Reputation() const
+{
+    return neighborsMet + outskirtsReports * 2;
+}
+
+const wchar_t* NeighborhoodState::ReputationLabel() const
+{
+    return Reputation() >= 12  ? L"믿고 인사하는 이웃"
+           : Reputation() >= 4 ? L"낯익은 얼굴"
+                               : L"아직 낯선 이웃";
+}
+
+const wchar_t* NeighborhoodState::Atmosphere() const
+{
+    return outskirtsReports > 0 ? L"귀갓길 이야기를 나누며 조금 안심하는 동네"
+                                : L"밝은 일상 속에 외곽을 걱정하는 동네";
+}
+
+bool LevelOne::InTown(LevelPoint point) const
+{
+    return Distance(point, spawn) <= TownRadius;
+}
+
+bool LevelOne::InOutskirts(LevelPoint point) const
+{
+    return Distance(point, spawn) >= OutskirtsRadius;
 }
 
 LevelPoint LevelOne::Center(int column, int row) const
@@ -205,6 +238,22 @@ void LevelOne::Generate()
         }
     }
 
+    // Four neighborhood landmarks surround the central cross; random plots fill the rest.
+    for (int index = 0; index < 4; ++index)
+    {
+        int x = index % 2 == 0 ? 16 : 25;
+        int z = index < 2 ? 11 : 19;
+        for (int row = z; row < z + 2; ++row)
+        {
+            for (int col = x; col < x + 3; ++col)
+            {
+                tiles[row * Columns + col] = LevelTile::Building;
+            }
+        }
+        LevelPoint corner = Center(x, z);
+        buildings.push_back({{corner.x + 2, corner.z + 1}, 3, 2, BuildingStyle(index)});
+    }
+
     for (int attempt = 0; attempt < 180 && buildings.size() < 20; ++attempt)
     {
         int width = 2 + int(random() % 3);
@@ -282,7 +331,7 @@ void LevelOne::Generate()
         ++reachableTiles;
         LevelPoint point = Center(i % Columns, i / Columns);
 
-        if (Distance(point, spawn) > 11)
+        if (Distance(point, spawn) >= OutskirtsRadius + 2)
         {
             enemyCells.push_back(i);
         }
@@ -339,6 +388,12 @@ void LevelOne::Reset(std::uint32_t seed)
     ActorList<MeshActor>(scene).clear();
     ActorList<MarkerActor>(scene).clear();
     stats = PlayerStats{};
+    neighborhood = NeighborhoodState{};
+    residents.clear();
+    neighborhoodOpen = false;
+    conversationActor = 0;
+    conversationTime = 0;
+    conversation.clear();
     drops.clear();
     feedback.clear();
     dust.clear();
@@ -350,6 +405,7 @@ void LevelOne::Reset(std::uint32_t seed)
     paused = statsOpen = accomplished = false;
     ClearKeys();
     Generate();
+    BuildResidents();
     BuildScenery();
     Player().name = "Player";
     Player().active = Player().visible = true;
@@ -359,7 +415,8 @@ void LevelOne::Reset(std::uint32_t seed)
     Player().position = camera = spawn;
     drops.push_back({{spawn.x + 2, spawn.z}, DropKind::Potion});
     RebuildPaths();
-    Notify(L"레벨 1 · 귀갓길의 잔향 | 잔향을 처치하고 캐릭터 Lv.5와 스탯 배분을 달성하세요.");
+    Notify(L"레벨 1 · 먼저 이웃에게 인사해 보세요. 잔향은 동네 너머 외곽에 있습니다. [E] 대화 "
+           L"[Tab] 동네");
 }
 
 bool LevelOne::Blocked(LevelPoint point) const
@@ -447,7 +504,7 @@ void LevelOne::RebuildPaths()
             int x = current % Columns + int(delta.x);
             int z = current / Columns + int(delta.z);
 
-            if (!Walkable(x, z))
+            if (!Walkable(x, z) || !InOutskirts(Center(x, z)))
             {
                 continue;
             }
@@ -558,8 +615,7 @@ void LevelOne::UpdateEnemies(float dt)
             if (enemy.timer <= 0)
             {
                 if (scene.IsActive(Player().Id()) && distance < 1.65f && invulnerable <= 0 &&
-                    Distance(Player().position, spawn) > 5 &&
-                    Visible(enemy.position, Player().position))
+                    InOutskirts(Player().position) && Visible(enemy.position, Player().position))
                 {
                     int damage = (std::max)(1, 12 + enemy.kind * 4 - stats.Defense());
                     stats.health = (std::max)(0, stats.health - damage);
@@ -580,8 +636,8 @@ void LevelOne::UpdateEnemies(float dt)
             continue;
         }
 
-        bool aggro = scene.IsActive(Player().Id()) && distance < 10 &&
-                     Distance(Player().position, spawn) > 5;
+        bool aggro =
+            scene.IsActive(Player().Id()) && distance < 10 && InOutskirts(Player().position);
         enemy.state = aggro ? EnemyState::Chasing : EnemyState::Roaming;
 
         if (aggro && distance < 1.3f && Visible(enemy.position, Player().position))
@@ -614,7 +670,8 @@ void LevelOne::UpdateEnemies(float dt)
                     int z = cell / Columns + int(delta.z);
                     int next = z * Columns + x;
 
-                    if (Walkable(x, z) && distances[next] >= 0 && distances[next] < distances[best])
+                    if (Walkable(x, z) && InOutskirts(Center(x, z)) && distances[next] >= 0 &&
+                        distances[next] < distances[best])
                     {
                         best = next;
                     }
@@ -639,10 +696,214 @@ void LevelOne::UpdateEnemies(float dt)
             Move(enemy.position,
                  (target.x - previous.x) / length * movement,
                  (target.z - previous.z) / length * movement);
+            if (!InOutskirts(enemy.position))
+            {
+                enemy.position = previous;
+            }
             enemy.stride += Distance(previous, enemy.position) * 6;
             enemy.heading = std::atan2(target.x - previous.x, target.z - previous.z);
         }
     }
+}
+
+void LevelOne::BuildResidents()
+{
+    const wchar_t* titles[] = {L"빵집 사장",
+                               L"꽃집 이웃",
+                               L"우편 배달원",
+                               L"산책하는 어르신",
+                               L"학생",
+                               L"편의점 직원",
+                               L"청소하는 이웃",
+                               L"강아지를 기다리는 주민"};
+    const wchar_t* roles[] = {L"가게 돌보기",
+                              L"꽃 돌보기",
+                              L"우편 배달",
+                              L"산책",
+                              L"등굣길",
+                              L"쉬는 시간",
+                              L"동네 청소",
+                              L"이웃 기다리기"};
+    const LevelPoint offsets[] = {
+        {-4, 0}, {4, 0}, {0, -8}, {0, 8}, {-12, 0}, {12, 0}, {0, -12}, {0, 12}};
+    for (int index = 0; index < 8; ++index)
+    {
+        auto& resident = scene.Spawn<LevelResident>(0);
+        resident.name = "Neighborhood resident";
+        resident.title = titles[index];
+        resident.role = roles[index];
+        resident.kind = index;
+        resident.home =
+            resident.position = {spawn.x + offsets[index].x, spawn.z + offsets[index].z};
+        resident.rest = 1.f + index * .7f;
+    }
+}
+
+void LevelOne::PlanResidentWalk(LevelResident& resident)
+{
+    resident.route.clear();
+    resident.waypoint = 0;
+    std::vector<int> destinations;
+    for (int cell = 0; cell < Columns * Rows; ++cell)
+    {
+        if (tiles[cell] == LevelTile::Road &&
+            Distance(Center(cell % Columns, cell / Columns), spawn) < TownRadius - 1)
+        {
+            destinations.push_back(cell);
+        }
+    }
+    const int start = Cell(resident.position);
+    if (start < 0 || destinations.empty())
+    {
+        return;
+    }
+    const int target = destinations[random() % destinations.size()];
+    std::array<int, Columns * Rows> previous;
+    previous.fill(-1);
+    std::queue<int> pending;
+    previous[start] = start;
+    pending.push(start);
+    while (!pending.empty() && previous[target] < 0)
+    {
+        int current = pending.front();
+        pending.pop();
+        for (auto delta :
+             {LevelPoint{1, 0}, LevelPoint{-1, 0}, LevelPoint{0, 1}, LevelPoint{0, -1}})
+        {
+            int x = current % Columns + int(delta.x);
+            int z = current / Columns + int(delta.z);
+            if (!Walkable(x, z) || Distance(Center(x, z), spawn) >= TownRadius - 1)
+            {
+                continue;
+            }
+            int next = z * Columns + x;
+            if (previous[next] < 0)
+            {
+                previous[next] = current;
+                pending.push(next);
+            }
+        }
+    }
+    if (previous[target] < 0)
+    {
+        return;
+    }
+    for (int current = target; current != start; current = previous[current])
+    {
+        resident.route.push_back(Center(current % Columns, current / Columns));
+    }
+    std::reverse(resident.route.begin(), resident.route.end());
+}
+
+void LevelOne::UpdateResidents(float dt)
+{
+    for (auto& resident : residents)
+    {
+        resident.speed = 0;
+        if (!scene.IsActive(resident.Id()) ||
+            (conversationTime > 0 && conversationActor == resident.Id()))
+        {
+            continue;
+        }
+        resident.rest -= dt;
+        if (resident.rest > 0)
+        {
+            continue;
+        }
+        if (resident.waypoint >= resident.route.size())
+        {
+            PlanResidentWalk(resident);
+            resident.rest = 1.5f + float(random() % 40) * .1f;
+            continue;
+        }
+        const LevelPoint target = resident.route[resident.waypoint];
+        const LevelPoint before = resident.position;
+        const float distance = Distance(before, target);
+        if (distance < .04f)
+        {
+            resident.position = target;
+            ++resident.waypoint;
+            continue;
+        }
+        const float movement = (std::min)(distance, dt * (.65f + resident.kind * .035f));
+        Move(resident.position,
+             (target.x - before.x) / distance * movement,
+             (target.z - before.z) / distance * movement);
+        if (!InTown(resident.position))
+        {
+            resident.position = before;
+        }
+        const float moved = Distance(before, resident.position);
+        resident.speed = dt > 0 ? moved / dt : 0;
+        resident.stride += moved * 6;
+        resident.heading = std::atan2(target.x - before.x, target.z - before.z);
+        if (moved < .0001f)
+        {
+            resident.route.clear();
+        }
+    }
+}
+
+const LevelResident* LevelOne::NearestResident() const
+{
+    if (!FindPlayer())
+    {
+        return nullptr;
+    }
+    const LevelResident* nearest = nullptr;
+    float range = 1.8f;
+    for (const auto& resident : residents)
+    {
+        const float distance = Distance(Player().position, resident.position);
+        if (scene.IsVisible(resident.Id()) && distance < range &&
+            Visible(Player().position, resident.position))
+        {
+            nearest = &resident;
+            range = distance;
+        }
+    }
+    return nearest;
+}
+
+void LevelOne::TalkToResident()
+{
+    const auto* nearest = NearestResident();
+    auto* resident = nearest ? dynamic_cast<LevelResident*>(scene.Find(nearest->Id())) : nullptr;
+    if (!resident)
+    {
+        return;
+    }
+    conversationActor = resident->Id();
+    conversationTime = 6;
+    resident->heading = std::atan2(Player().position.x - resident->position.x,
+                                   Player().position.z - resident->position.z);
+    conversation = {resident->title + L" · " + resident->role};
+    if (!resident->greeted)
+    {
+        resident->greeted = true;
+        ++neighborhood.neighborsMet;
+        conversation.push_back(L"얼굴을 기억해 둘게요. 돌아오는 길에도 인사해요. [동네 신뢰 +1]");
+    }
+    else
+    {
+        conversation.push_back(neighborhood.Reputation() >= 4
+                                   ? L"또 만났네요! 오늘도 무사히 돌아와요."
+                                   : L"안녕하세요. 오늘 동네는 조용하네요.");
+    }
+    const int reports = (std::min)(6, kills / 3);
+    int rumor =
+        neighborhood.outskirtsReports > 0 && resident->kind % 3 == 2 ? 2 : resident->kind % 2;
+    if (resident->kind == 0 && reports > neighborhood.outskirtsReports)
+    {
+        const int gain = (reports - neighborhood.outskirtsReports) * 2;
+        neighborhood.outskirtsReports = reports;
+        rumor = 2;
+        conversation[1] =
+            L"귀갓길 소식을 전해 줘서 고마워요. [동네 신뢰 +" + std::to_wstring(gain) + L"]";
+    }
+    neighborhood.heardRumors[rumor] = true;
+    conversation.push_back(NeighborhoodState::Rumors[rumor]);
+    Notify(L"[Tab] 동네 기록에서 들은 소문과 평판을 확인할 수 있습니다.");
 }
 
 int LevelOne::NearestDrop() const
@@ -710,13 +971,14 @@ void LevelOne::Update(float dt)
     {
         return;
     }
-    if (paused || statsOpen || stats.health <= 0)
+    if (paused || statsOpen || neighborhoodOpen || stats.health <= 0)
     {
         return;
     }
 
     dt = Clamp(dt, 0, .05f);
     time += dt;
+    conversationTime = (std::max)(0.f, conversationTime - dt);
     toastTime = (std::max)(0.f, toastTime - dt);
     invulnerable = (std::max)(0.f, invulnerable - dt);
     attackCooldown = (std::max)(0.f, attackCooldown - dt);
@@ -773,6 +1035,7 @@ void LevelOne::Update(float dt)
     }
 
     UpdateEnemies(dt);
+    UpdateResidents(dt);
 
     for (auto& item : feedback)
     {
@@ -834,7 +1097,11 @@ void LevelOne::KeyDown(unsigned char raw)
 
     if (key == 27)
     {
-        if (statsOpen)
+        if (neighborhoodOpen)
+        {
+            neighborhoodOpen = false;
+        }
+        else if (statsOpen)
         {
             statsOpen = false;
         }
@@ -857,7 +1124,7 @@ void LevelOne::KeyDown(unsigned char raw)
             invulnerable = 3;
             attackTime = attackCooldown = 0;
             attackResolved = true;
-            paused = statsOpen = false;
+            paused = statsOpen = neighborhoodOpen = false;
             ClearKeys();
             RebuildPaths();
             Notify(L"쉼터에서 회복했습니다. 경험치와 아이템은 유지됩니다.");
@@ -876,10 +1143,24 @@ void LevelOne::KeyDown(unsigned char raw)
         return;
     }
 
+    if (key == '\t')
+    {
+        neighborhoodOpen = !neighborhoodOpen;
+        statsOpen = false;
+        ClearKeys();
+        return;
+    }
+
     if (key == 'c')
     {
         statsOpen = !statsOpen;
+        neighborhoodOpen = false;
         ClearKeys();
+        return;
+    }
+
+    if (neighborhoodOpen)
+    {
         return;
     }
 
@@ -900,7 +1181,14 @@ void LevelOne::KeyDown(unsigned char raw)
 
     if (key == 'e')
     {
-        PickUp();
+        if (NearestResident())
+        {
+            TalkToResident();
+        }
+        else
+        {
+            PickUp();
+        }
     }
     else if (key == 'q' && potions > 0 && stats.health < stats.MaximumHealth())
     {

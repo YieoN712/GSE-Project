@@ -16,6 +16,8 @@ but WITHOUT ANY WARRANTY.
 #include "Tutorial.h"
 #include "LevelOne.h"
 #include "LevelOneView.h"
+#include "MonitorServer.h"
+#include "MonitorSnapshot.h"
 #include <memory>
 #include <algorithm>
 #include <chrono>
@@ -29,6 +31,9 @@ namespace
     std::unique_ptr<TutorialView> tutorialView;
     std::unique_ptr<LevelOne> level;
     std::unique_ptr<LevelOneView> levelView;
+    std::unique_ptr<MonitorServer> monitor;
+    std::chrono::steady_clock::time_point nextMonitorUpdate;
+    std::uint64_t monitorSequence = 0;
     int windowWidth = 1280, windowHeight = 800;
     int lastTime = 0;
     bool visible = true;
@@ -75,6 +80,13 @@ void Tick(int)
         {
             tutorial->ClearKeys();
         }
+    }
+    const auto monitorNow = std::chrono::steady_clock::now();
+    if (monitor && monitorNow >= nextMonitorUpdate)
+    {
+        monitor->Publish(MakeMonitorSnapshot(
+            level.get(), tutorial.get(), visible && focused, ++monitorSequence));
+        nextMonitorUpdate = monitorNow + std::chrono::milliseconds(500);
     }
     glutPostRedisplay();
     glutTimerFunc(16, Tick, 0);
@@ -125,6 +137,7 @@ void Visibility(int state)
 
 void Close()
 {
+    monitor.reset();
     levelView.reset();
     tutorialView.reset();
 }
@@ -132,6 +145,7 @@ void Close()
 int main(int argc, char** argv)
 {
     bool tutorialMode = false;
+    bool monitorEnabled = true;
     std::uint32_t seed =
         static_cast<std::uint32_t>(std::chrono::system_clock::now().time_since_epoch().count());
     int outputArgument = 1;
@@ -143,6 +157,10 @@ int main(int argc, char** argv)
         if (argument == "--tutorial")
         {
             tutorialMode = true;
+        }
+        else if (argument == "--no-monitor")
+        {
+            monitorEnabled = false;
         }
         else if (argument.find("--seed=") == 0)
         {
@@ -210,6 +228,24 @@ int main(int argc, char** argv)
         std::cerr << "Level initialization failed: " << error.what() << "\n";
         Close();
         return 1;
+    }
+    if (monitorEnabled)
+    {
+        try
+        {
+            monitor.reset(new MonitorServer());
+            monitor->Publish(
+                MakeMonitorSnapshot(level.get(), tutorial.get(), true, ++monitorSequence));
+            if (!monitor->Start())
+            {
+                monitor.reset();
+            }
+        }
+        catch (const std::exception& error)
+        {
+            std::cerr << "Monitor initialization failed: " << error.what() << '\n';
+            monitor.reset();
+        }
     }
     glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_GLUTMAINLOOP_RETURNS);
     glutIgnoreKeyRepeat(1);

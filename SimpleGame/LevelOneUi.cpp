@@ -27,8 +27,9 @@ void LevelOneUi::Hud(const LevelOne& game, float width, float height, bool loade
                   std::to_wstring(game.kills));
 
     UiPanel(20, height - 90, width - 40, 70, .12f, .21f, .23f, .95f);
-    font.Text(
-        38, height - 62, L"WASD 이동   Space / J 공격   E 줍기   Q 회복   C 스탯   Esc 일시정지");
+    font.Text(38,
+              height - 62,
+              L"WASD 이동   Space / J 공격   E 대화·줍기   Tab 동네   Q 회복   C 스탯   Esc 정지");
     font.Text(38,
               height - 33,
               L"회복 음료 " + std::to_wstring(game.potions) + L"   기억 조각 " +
@@ -45,7 +46,17 @@ void LevelOneUi::Hud(const LevelOne& game, float width, float height, bool loade
         font.Text(38, height - 115, game.toast, .96f, .86f, .61f);
     }
 
-    if (game.NearestDrop() >= 0)
+    const auto* resident = game.NearestResident();
+    if (resident)
+    {
+        font.Text(width / 2 - 130,
+                  height / 2 + 90,
+                  L"[E] " + resident->title + L"와 대화",
+                  .75f,
+                  .92f,
+                  1);
+    }
+    else if (game.NearestDrop() >= 0)
     {
         font.Text(width / 2 - 70, height / 2 + 90, L"[E] 아이템 획득", .98f, .89f, .59f);
     }
@@ -53,7 +64,7 @@ void LevelOneUi::Hud(const LevelOne& game, float width, float height, bool loade
     // Minimap deliberately presents every walkable tile and blocked plot.
     float mapX = width - 208, mapY = 42, cell = 4;
     UiPanel(mapX - 12, mapY - 22, 200, 184, .12f, .21f, .23f, .95f);
-    font.Text(mapX, mapY - 5, L"지도 / 녹색: 쉼터");
+    font.Text(mapX, mapY - 5, L"파랑: 주민 / 빨강: 잔향");
 
     for (int z = 0; z < LevelOne::Rows; ++z)
     {
@@ -63,6 +74,12 @@ void LevelOneUi::Hud(const LevelOne& game, float width, float height, bool loade
             float r = tile == LevelTile::Building ? .29f : tile == LevelTile::Water ? .24f : .62f;
             float g = tile == LevelTile::Water ? .49f : tile == LevelTile::Building ? .33f : .66f;
             float b = tile == LevelTile::Water ? .64f : .47f;
+            if (game.InTown(game.Center(x, z)) && game.Walkable(x, z))
+            {
+                r = .58f;
+                g = .75f;
+                b = .54f;
+            }
             UiPanel(mapX + x * cell, mapY + z * cell, cell - .2f, cell - .2f, r, g, b);
         }
     }
@@ -82,6 +99,13 @@ void LevelOneUi::Hud(const LevelOne& game, float width, float height, bool loade
         }
     }
 
+    for (const auto& npc : game.residents)
+    {
+        if (game.scene.IsVisible(npc.Id()))
+        {
+            dot(npc.position, .40f, .78f, 1);
+        }
+    }
     dot(game.spawn, .36f, .95f, .52f);
     dot(game.Player().position, 1, .93f, .59f);
     font.Text(mapX, mapY + 154, L"Seed " + std::to_wstring(game.mapSeed));
@@ -93,6 +117,60 @@ void LevelOneUi::Hud(const LevelOne& game, float width, float height, bool loade
               .22f,
               .32f,
               .28f);
+
+    font.Text(24,
+              242,
+              game.InTown(game.Player().position)        ? L"생활 구역 · 이웃들과 함께하는 길"
+              : game.InOutskirts(game.Player().position) ? L"외곽 · 잔향을 조심하세요"
+                                                         : L"동네 경계 · 외곽으로 이어지는 길",
+              .24f,
+              .34f,
+              .30f);
+    font.Text(24,
+              270,
+              L"동네 신뢰 " + std::to_wstring(game.neighborhood.Reputation()) + L" · " +
+                  game.neighborhood.ReputationLabel(),
+              .24f,
+              .34f,
+              .30f);
+
+    if (game.conversationTime > 0 && !game.neighborhoodOpen && !game.statsOpen && !game.paused)
+    {
+        UiPanel(width / 2 - 380, height - 282, 760, 125, .12f, .21f, .23f, .97f);
+        float y = height - 252;
+        for (const auto& line : game.conversation)
+        {
+            font.Text(width / 2 - 360, y, line);
+            y += 32;
+        }
+    }
+
+    if (game.neighborhoodOpen)
+    {
+        UiPanel(width / 2 - 380, 216, 760, 350, .12f, .21f, .23f, .98f);
+        float left = width / 2 - 356;
+        font.Text(left, 250, L"해온 · 동네 기록 [Tab / Esc] 닫기", .98f, .83f, .52f);
+        font.Text(left, 286, game.neighborhood.Atmosphere());
+        font.Text(left,
+                  322,
+                  L"신뢰 " + std::to_wstring(game.neighborhood.Reputation()) + L" · " +
+                      game.neighborhood.ReputationLabel());
+        font.Text(left,
+                  356,
+                  L"인사한 이웃 " + std::to_wstring(game.neighborhood.neighborsMet) +
+                      L" / 8   외곽 소식 " + std::to_wstring(game.neighborhood.outskirtsReports) +
+                      L" / 6");
+        float y = 396;
+        for (size_t index = 0; index < NeighborhoodState::Rumors.size(); ++index)
+        {
+            font.Text(left,
+                      y,
+                      game.neighborhood.heardRumors[index] ? NeighborhoodState::Rumors[index]
+                                                           : L"아직 듣지 못한 소문");
+            y += 34;
+        }
+        font.Text(left, 536, L"외곽 잔향 3마리마다 빵집 이웃에게 귀갓길 소식을 전해 보세요.");
+    }
 
     if (game.statsOpen)
     {
@@ -171,6 +249,17 @@ void LevelOneUi::Draw(const LevelOne& game, int width, int height, bool loaded, 
                 .87f,
                 .44f,
                 .40f);
+    }
+
+    for (const auto& resident : game.residents)
+    {
+        if (!game.scene.IsVisible(resident.Id()))
+        {
+            continue;
+        }
+        const auto matrix = game.scene.WorldMatrix(resident.Id());
+        const auto screen = project({matrix[12], matrix[14]}, matrix[13] + 1.9f);
+        font.Text(screen.x - 40, screen.z, resident.title, .22f, .30f, .28f);
     }
 
     for (const auto& feedback : game.feedback)

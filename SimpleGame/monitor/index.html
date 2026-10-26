@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GSE · 월드 모니터</title>
+    <style>
+        :root { color-scheme: dark; font: 15px/1.5 "Segoe UI", "Malgun Gothic", sans-serif; background: #0c1420; color: #e5edf5; }
+        * { box-sizing: border-box; }
+        body { margin: 0; }
+        main { max-width: 1500px; margin: auto; padding: 32px; }
+        header, .toolbar, .section-title { display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+        h1 { margin: 4px 0; font-size: 28px; letter-spacing: -.8px; }
+        h2 { margin: 0; font-size: 18px; }
+        p { margin: 6px 0; }
+        small, .muted { color: #97aabd; }
+        .eyebrow { color: #75ddca; font-size: 12px; letter-spacing: 2px; }
+        .status { padding: 8px 14px; border-radius: 20px; background: #263448; color: #a9bbce; }
+        .status.live { background: #153b37; color: #89ebd2; }
+        .status.error { background: #422d30; color: #ffbbb4; }
+        .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 24px 0; }
+        .card, section { background: #142131; border: 1px solid #27384c; border-radius: 14px; padding: 20px; }
+        .value { font-size: 32px; font-weight: 600; margin: 8px 0 0; }
+        section { margin-top: 18px; }
+        .toolbar { justify-content: flex-start; margin: 20px 0 12px; }
+        select, input, button { border: 1px solid #405770; border-radius: 8px; padding: 9px 12px; background: #0d1927; color: inherit; font: inherit; }
+        button { cursor: pointer; }
+        button:hover { border-color: #75ddca; }
+        input { flex: 1; min-width: 160px; }
+        .table-wrap { overflow: auto; max-height: 410px; margin-top: 14px; }
+        table { width: 100%; border-collapse: collapse; white-space: nowrap; text-align: left; font-size: 14px; }
+        th { position: sticky; top: 0; background: #1a2a3d; color: #a7bacd; font-weight: 500; }
+        th, td { padding: 11px 12px; border-bottom: 1px solid #28394c; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; background: #263b50; }
+        .empty { padding: 28px; text-align: center; color: #97aabd; }
+        #towns { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 14px; }
+        .town { border-left: 3px solid #75ddca; background: #102030; padding: 16px; border-radius: 5px; }
+        .town h3 { margin: 0 0 10px; }
+        dl { display: grid; grid-template-columns: 80px 1fr; gap: 8px; margin: 12px 0 0; }
+        dt { color: #97aabd; }
+        dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+        details { margin-top: 22px; }
+        pre { overflow: auto; max-height: 320px; padding: 16px; background: #08111b; font-size: 12px; }
+        footer { margin-top: 22px; color: #97aabd; font-size: 12px; }
+        @media (max-width: 760px) { main { padding: 16px; } .cards { grid-template-columns: repeat(2, 1fr); } .value { font-size: 26px; } }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <div><span class="eyebrow">GSE / LOCAL OBSERVATORY</span><h1>월드 모니터</h1><p class="muted">일상 속 작은 변화, 현재 로드된 세계의 기록</p></div>
+        <div id="connection" class="status" role="status" aria-live="polite">연결 대기</div>
+    </header>
+    <p id="session" class="muted">게임 실행 후 자동 연결됩니다.</p>
+    <div class="cards">
+        <div class="card"><small>NPC · 현장에 있음 / 등록</small><div id="npcCount" class="value">—</div></div>
+        <div class="card"><small>몹 · 생존 / 등록</small><div id="mobCount" class="value">—</div></div>
+        <div class="card"><small>로드된 마을</small><div id="townCount" class="value">—</div></div>
+        <div class="card"><small>플레이어 · 레벨 / HP</small><div id="player" class="value">—</div></div>
+    </div>
+    <section>
+        <div class="section-title"><h2>마을 현황</h2><small>인구 = 로드된 구역에 현장 존재하는 NPC 수 (플레이어·몹 제외)</small></div>
+        <div id="towns"><p class="muted">수신된 마을 정보가 없습니다.</p></div>
+    </section>
+    <section>
+        <div class="section-title"><h2>개체 상태</h2><button id="refreshToggle" type="button">수신 일시정지</button></div>
+        <div class="toolbar">
+            <label>마을 <select id="townFilter"><option value="">전체</option></select></label>
+            <label>종류 <select id="kindFilter"><option value="all">전체</option><option value="npc">NPC</option><option value="mob">몹</option></select></label>
+            <input id="search" aria-label="이름 또는 Actor ID 검색" placeholder="이름 또는 Actor ID 검색">
+        </div>
+        <p id="shown" class="muted">데이터 대기 중</p>
+        <div class="table-wrap"><table>
+            <thead><tr><th>종류</th><th>Actor ID</th><th>이름</th><th>상태</th><th>HP</th><th>위치 X / Y / Z</th><th>활성 / 표시</th></tr></thead>
+            <tbody id="entities"></tbody>
+        </table></div>
+    </section>
+    <details id="rawDetails"><summary>수신 JSON · schemaVersion 1</summary><pre id="raw">대기 중</pre></details>
+    <footer>읽기 전용 · 127.0.0.1 · 0.5초 간격 JSON 수신 · 미연동 항목은 실제 게임 시스템 연결 전까지 값을 추정하지 않습니다.<br>브라우저로 전환하면 기존 게임 정책에 따라 시뮬레이션은 멈추지만 상태 수신은 계속됩니다.</footer>
+</main>
+<script>
+    "use strict";
+    const element = id => document.getElementById(id);
+    const states = { idle: "대기", walking: "이동", talking: "대화", absent: "부재", inactive: "비활성", roaming: "배회", chasing: "추적", windup: "공격 준비", recovery: "공격 후 회복", dead: "사망 / 재생성 대기", unknown: "알 수 없음" };
+    let snapshot = null;
+    let receiving = true;
+    let lastSequence = null;
+    let lastAdvance = 0;
+    const cell = value => {
+        const node = document.createElement("td");
+        node.textContent = String(value);
+        return node;
+    };
+    function connection(text, style = "") {
+        element("connection").textContent = text;
+        element("connection").className = `status ${style}`;
+    }
+    function describe(value) {
+        if (value === null || value === undefined) return "미연동";
+        if (Array.isArray(value)) return value.length ? value.map(describe).join("\n") : "없음";
+        if (typeof value === "object") return JSON.stringify(value);
+        return String(value);
+    }
+    function renderEntities() {
+        if (!snapshot) return;
+        const town = element("townFilter").value;
+        const kind = element("kindFilter").value;
+        const search = element("search").value.toLocaleLowerCase();
+        const rows = [];
+        for (const [type, actors] of [["npc", snapshot.npcs], ["mob", snapshot.mobs]]) {
+            if (kind !== "all" && kind !== type) continue;
+            for (const actor of actors) {
+                if (town && actor.townId !== town) continue;
+                if (!`${actor.name} ${actor.id}`.toLocaleLowerCase().includes(search)) continue;
+                const row = document.createElement("tr");
+                const position = ["x", "y", "z"].map(axis => Number.isFinite(actor.position?.[axis]) ? actor.position[axis].toFixed(1) : "—").join(" / ");
+                row.append(cell(type === "npc" ? "NPC" : "몹"), cell(actor.id), cell(actor.name), cell(states[actor.state] || actor.state), cell(actor.health === undefined ? "—" : `${actor.health} / ${actor.maximumHealth}`), cell(position), cell(`${actor.active ? "활성" : "비활성"} / ${actor.visible ? "표시" : "숨김"}`));
+                rows.push(row);
+            }
+        }
+        element("shown").textContent = `${rows.length}개 표시 · 현장 부재는 이야기 상태이며 Actor 표시 플래그와 별개입니다.`;
+        if (!rows.length) {
+            const row = document.createElement("tr");
+            const empty = cell("현재 조건에 해당하는 개체가 없습니다.");
+            empty.colSpan = 7;
+            empty.className = "empty";
+            row.append(empty);
+            rows.push(row);
+        }
+        element("entities").replaceChildren(...rows);
+    }
+    function render(data) {
+        snapshot = data;
+        const counts = data.counts;
+        element("npcCount").textContent = `${counts.presentNpcs} / ${counts.npcs}`;
+        element("mobCount").textContent = `${counts.aliveMobs} / ${counts.mobs}`;
+        element("townCount").textContent = data.towns.length;
+        element("player").textContent = !data.player ? "없음" : data.player.level === undefined ? "튜토리얼" : `Lv.${data.player.level} / ${data.player.health}`;
+        const phase = !data.foreground ? "게임 창 비활성 · 시뮬레이션 정지" : data.paused ? "게임 일시정지" : "게임 창 활성";
+        element("session").textContent = `${data.scene} · ${phase} · 경과 ${Number(data.simulationSeconds).toFixed(1)}초 · #${data.sequence} · 수신 ${new Date().toLocaleTimeString()}`;
+        const selected = element("townFilter").value;
+        const options = [new Option("전체", "")];
+        const towns = [];
+        for (const town of data.towns) {
+            options.push(new Option(town.name, town.id));
+            const panel = document.createElement("article");
+            panel.className = "town";
+            const title = document.createElement("h3");
+            title.textContent = town.name;
+            const district = document.createElement("small");
+            district.textContent = `${town.district || ""} · ${town.scope === "loaded-scene" ? "로드된 구역 기준" : town.scope || "범위 미지정"}`;
+            const list = document.createElement("dl");
+            const tendencies = town.tendencies && "neighborsMet" in town.tendencies
+                ? `인사한 이웃 ${town.tendencies.neighborsMet}명 · 외곽 소식 ${town.tendencies.outskirtsReports}회`
+                : town.tendencies;
+            const reputation = town.reputation ? `${town.reputation.label} · 신뢰 ${town.reputation.trust}` : null;
+            for (const [key, value] of [["인구", town.population], ["분위기", town.atmosphere], ["소문", town.rumors], ["성향", tendencies], ["평판", reputation]]) {
+                const term = document.createElement("dt");
+                term.textContent = key;
+                const description = document.createElement("dd");
+                description.textContent = describe(value);
+                list.append(term, description);
+            }
+            panel.append(title, district, list);
+            towns.push(panel);
+        }
+        element("towns").replaceChildren(...towns);
+        element("townFilter").replaceChildren(...options);
+        element("townFilter").value = options.some(option => option.value === selected) ? selected : "";
+        renderEntities();
+        if (element("rawDetails").open) element("raw").textContent = JSON.stringify(data, null, 2);
+    }
+    function validate(data) {
+        if (data.schemaVersion !== 1 || !Number.isFinite(data.sequence) || !data.counts || !Array.isArray(data.npcs) || !Array.isArray(data.mobs) || !Array.isArray(data.towns)) {
+            throw new Error("지원하지 않는 JSON 형식");
+        }
+    }
+    async function poll() {
+        if (receiving) {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 1500);
+            try {
+                const response = await fetch("/api/snapshot", { cache: "no-store", signal: controller.signal });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                if (data.ready === false) {
+                    connection("게임 상태 준비 중");
+                } else {
+                    validate(data);
+                    if (data.sequence !== lastSequence) {
+                        lastAdvance = Date.now();
+                        lastSequence = data.sequence;
+                    }
+                    const stale = Date.now() - lastAdvance > 3000;
+                    render(data);
+                    connection(stale ? "상태 갱신 지연 · 마지막 데이터" : "연결됨 · JSON 수신 중", stale ? "error" : "live");
+                }
+            } catch (error) {
+                connection(`연결 끊김 · ${error.name === "AbortError" ? "응답 시간 초과" : error.message}`, "error");
+                element("session").textContent = "게임 실행과 로컬 주소를 확인하세요. 표시된 값은 마지막 수신 데이터입니다. 자동 재연결 중입니다.";
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+        setTimeout(poll, 500);
+    }
+    for (const id of ["townFilter", "kindFilter", "search"]) element(id).addEventListener("input", renderEntities);
+    element("rawDetails").addEventListener("toggle", () => {
+        if (snapshot) element("raw").textContent = JSON.stringify(snapshot, null, 2);
+    });
+    element("refreshToggle").addEventListener("click", () => {
+        receiving = !receiving;
+        element("refreshToggle").textContent = receiving ? "수신 일시정지" : "수신 재개";
+        connection(receiving ? "재연결 중" : "사용자 수신 정지 · 마지막 데이터");
+    });
+    poll();
+</script>
+</body>
+</html>

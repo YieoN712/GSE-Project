@@ -45,6 +45,14 @@ namespace
             for (const auto& enemy : level.enemies)
             {
                 Check(!level.Blocked(enemy.home), "An enemy spawn must be traversable.");
+                Check(level.InOutskirts(enemy.home), "Monsters must spawn outside town.");
+            }
+
+            Check(level.residents.size() == 8, "Every map must contain eight neighbors.");
+            for (const auto& resident : level.residents)
+            {
+                Check(level.InTown(resident.position) && !level.Blocked(resident.position),
+                      "Residents must start on safe neighborhood ground.");
             }
 
             for (int z = 0; z < LevelOne::Rows; ++z)
@@ -75,6 +83,67 @@ namespace
             auto first = level.tiles;
             level.Reset(seed);
             Check(first == level.tiles, "A seed must reproduce its own map.");
+        }
+    }
+
+    void Neighborhood()
+    {
+        LevelOne level(7);
+        level.Player().position = level.residents[0].position;
+        level.KeyDown('e');
+        level.KeyUp('e');
+        Check(level.neighborhood.neighborsMet == 1 && level.neighborhood.Reputation() == 1 &&
+                  level.neighborhood.heardRumors[0],
+              "First greetings must earn trust and a rumor.");
+        level.KeyDown('e');
+        level.KeyUp('e');
+        Check(level.neighborhood.Reputation() == 1, "Repeated greetings must not farm trust.");
+        level.kills = 3;
+        level.KeyDown('e');
+        level.KeyUp('e');
+        Check(level.neighborhood.outskirtsReports == 1 && level.neighborhood.Reputation() == 3 &&
+                  level.neighborhood.heardRumors[2],
+              "New reports must affect trust and rumors.");
+        level.KeyDown('e');
+        level.KeyUp('e');
+        Check(level.neighborhood.Reputation() == 3, "Reports must not award trust twice.");
+        level.kills = 1000;
+        level.KeyDown('e');
+        level.KeyUp('e');
+        Check(level.neighborhood.outskirtsReports == 6, "Reports must have a prototype cap.");
+        level.KeyDown('\t');
+        const float before = level.time;
+        level.Update(.05f);
+        Check(level.neighborhoodOpen && level.time == before, "Records must pause simulation.");
+        level.KeyUp('\t');
+        level.KeyDown(27);
+        level.KeyUp(27);
+        Check(!level.neighborhoodOpen && !level.paused, "Escape must close records first.");
+        level.Reset(7);
+        Check(level.neighborhood.Reputation() == 0 && level.residents.size() == 8,
+              "Reset must clear social state without duplicating residents.");
+        for (int step = 0; step < 1800; ++step)
+        {
+            level.Update(.05f);
+            for (const auto& resident : level.residents)
+            {
+                Check(level.InTown(resident.position) && !level.Blocked(resident.position),
+                      "Residents must stay on traversable town ground.");
+            }
+            for (const auto& enemy : level.enemies)
+            {
+                Check(level.InOutskirts(enemy.position), "Monsters must not wander into town.");
+            }
+        }
+        level.Player().position = level.enemies[0].home;
+        level.stats.health = 100000;
+        for (int step = 0; step < 400; ++step)
+        {
+            level.Update(.05f);
+            for (const auto& enemy : level.enemies)
+            {
+                Check(level.InOutskirts(enemy.position), "Chasing must respect the boundary.");
+            }
         }
     }
 
@@ -143,6 +212,7 @@ int main()
     {
         Growth();
         Maps();
+        Neighborhood();
         CombatAndItems();
         std::cout << "LevelOne regression checks passed.\n";
         return 0;

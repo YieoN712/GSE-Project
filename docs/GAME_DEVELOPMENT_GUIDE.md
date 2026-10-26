@@ -297,6 +297,28 @@ model cache contract, generation invariants, and manual validation instructions.
 - Optional CPU checks: compile `tests/SceneGraphTests.cpp` (or `tests/LevelOneTests.cpp`)
   with `SimpleGame/Actor.cpp`, `SimpleGame/SceneGraph.cpp` and `SimpleGame/LevelOne.cpp`, using C++17.
 
+### Local monitoring contract
+
+- A read-only loopback HTTP monitor exposes JSON at 127.0.0.1:8765. Browser UI is separate
+  from game UI; the transport never reads live actors off-thread or changes simulation.
+- Counts cover the loaded scene only. Level 1 supplies actual neighborhood atmosphere,
+  rumors, greeting/report history and local trust. Tutorial social fields remain null.
+  See [MONITORING.md](MONITORING.md) for schema version 1.
+
+### Level 1 neighborhood and outskirts
+
+- Eight Actor-owned residents walk/rest on connected paths inside an 18-unit neighborhood.
+  Four central landmarks establish shops and homes; seeded outer plots remain connected.
+- Monsters spawn at least 26 units from the center and cannot pursue/wander inside the
+  24-unit outskirts boundary. A transition separates everyday life from combat.
+- E talks to a nearby resident before collecting loot. Tab opens neighborhood records and pauses
+  simulation. Full daily schedules, NPC attacks and faction morality are not implemented.
+- Local trust records distinct neighbors greeted (+1 each) and outskirts reports returned to
+  the baker (+2 per three kills, six reports maximum). Repeated actions give no duplicate credit.
+  This is community familiarity, not a global good/evil score.
+- Conversations reveal two authored rumors. Reporting outskirts news introduces a third rumor
+  and changes atmosphere. Social progress resets with the session/map.
+
 Future design and code changes should answer:
 
 - How does this help the player value a person, place, routine, or memory?
